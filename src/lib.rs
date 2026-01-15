@@ -131,11 +131,60 @@ impl FixedBitSet {
     /// assert_eq!(format!("{:b}", bs), "0010");
     /// ```
     pub fn with_capacity_and_blocks<I: IntoIterator<Item = Block>>(bits: usize, blocks: I) -> Self {
-        let mut bitset = Self::with_capacity(bits);
-        for (subblock, value) in bitset.as_mut_slice().iter_mut().zip(blocks.into_iter()) {
-            *subblock = value;
+        if bits == 0 {
+            return Self::new();
         }
-        bitset
+
+        let (mut simd_block_cnt, rem) = div_rem(bits, SimdBlock::BITS);
+        simd_block_cnt += (rem > 0) as usize;
+
+        let (mut block_cnt, rem) = div_rem(bits, BITS);
+        block_cnt += (rem > 0) as usize;
+
+        // SAFETY: We use Vec::with_capacity() to obtain uninitialized memory, and
+        // initialize all of it before passing ownership to the returned FixedBitSet.
+        unsafe {
+            let mut vec = Vec::<SimdBlock>::with_capacity(simd_block_cnt);
+            let mut subblock = vec.as_mut_ptr().cast::<Block>();
+            let subblock_end = subblock.add(block_cnt);
+
+            // Copy as much as we can from blocks
+            for value in blocks {
+                subblock.write(value);
+                subblock = subblock.add(1);
+                if subblock == subblock_end {
+                    break;
+                }
+            }
+
+            // Zero out the remainder of the allocation that the iterator didn't reach.
+            let simd_block_end = vec.as_mut_ptr().add(simd_block_cnt).cast::<Block>();
+            core::ptr::write_bytes(
+                subblock,
+                0,
+                simd_block_end.offset_from(subblock) as usize,
+            );
+
+            // Mask off any bits in the last block that the iterator did write to, but
+            // that are beyond the length.  This is necessary so that PartialEq, Hash,
+            // etc. work correctly.
+            let rem = bits % BITS;
+            if rem != 0 {
+                let last_block_ptr = vec.as_mut_ptr().cast::<Block>().add(block_cnt - 1);
+                let mask = (1usize << rem) - 1;
+                last_block_ptr.write(last_block_ptr.read() & mask);
+            }
+
+            let data = NonNull::new_unchecked(vec.as_mut_ptr()).cast();
+            let capacity = vec.capacity();
+            // FixedBitSet is taking over the ownership of vec's data
+            core::mem::forget(vec);
+            FixedBitSet {
+                data,
+                capacity,
+                length: bits,
+            }
+        }
     }
 
     /// Grow capacity to **bits**, all new bits initialized to zero
