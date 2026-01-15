@@ -187,6 +187,19 @@ impl FixedBitSet {
         }
     }
 
+    /// Create a new **FixedBitSet** with a specific number of bits,
+    /// all initially set.
+    ///
+    /// For example:
+    /// ```
+    /// let bs = fixedbitset::FixedBitSet::ones_with_capacity(10);
+    /// assert_eq!(bs.count_ones(..), 10);
+    /// assert_eq!(bs.len(), 10);
+    /// ```
+    pub fn ones_with_capacity(bits: usize) -> Self {
+        Self::with_capacity_and_blocks(bits, core::iter::repeat(!0))
+    }
+
     /// Grow capacity to **bits**, all new bits initialized to zero
     #[inline]
     pub fn grow(&mut self, bits: usize) {
