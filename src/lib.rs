@@ -102,8 +102,7 @@ impl FixedBitSet {
     /// Create a new **FixedBitSet** with a specific number of bits,
     /// all initially clear.
     pub fn with_capacity(bits: usize) -> Self {
-        let (mut blocks, rem) = div_rem(bits, SimdBlock::BITS);
-        blocks += (rem > 0) as usize;
+        let blocks = bits.div_ceil(SimdBlock::BITS);
         Self::from_blocks_and_len(vec![SimdBlock::NONE; blocks], bits)
     }
 
@@ -135,11 +134,8 @@ impl FixedBitSet {
             return Self::new();
         }
 
-        let (mut simd_block_cnt, rem) = div_rem(bits, SimdBlock::BITS);
-        simd_block_cnt += (rem > 0) as usize;
-
-        let (mut block_cnt, rem) = div_rem(bits, BITS);
-        block_cnt += (rem > 0) as usize;
+        let simd_block_cnt = bits.div_ceil(SimdBlock::BITS);
+        let block_cnt = bits.div_ceil(BITS);
 
         // SAFETY: We use Vec::with_capacity() to obtain uninitialized memory, and
         // initialize all of it before passing ownership to the returned FixedBitSet.
@@ -226,8 +222,7 @@ impl FixedBitSet {
         let mut data = unsafe {
             Vec::from_raw_parts(self.data.as_ptr(), self.simd_block_len(), self.capacity)
         };
-        let (mut blocks, rem) = div_rem(bits, SimdBlock::BITS);
-        blocks += (rem > 0) as usize;
+        let blocks = bits.div_ceil(SimdBlock::BITS);
         data.resize(blocks, fill);
         let (data, capacity, _) = vec_into_parts(data);
         self.data = data;
@@ -247,16 +242,12 @@ impl FixedBitSet {
 
     #[inline]
     fn usize_len(&self) -> usize {
-        let (mut blocks, rem) = div_rem(self.length, BITS);
-        blocks += (rem > 0) as usize;
-        blocks
+        self.length.div_ceil(BITS)
     }
 
     #[inline]
     fn simd_block_len(&self) -> usize {
-        let (mut blocks, rem) = div_rem(self.length, SimdBlock::BITS);
-        blocks += (rem > 0) as usize;
-        blocks
+        self.length.div_ceil(SimdBlock::BITS)
     }
 
     #[inline]
