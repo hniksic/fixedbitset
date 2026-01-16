@@ -122,7 +122,8 @@ impl FixedBitSet {
     ///
     /// If the blocks are not the exact size needed for the capacity
     /// they will be padded with zeros (if shorter) or truncated to
-    /// the capacity (if longer).
+    /// the capacity (if longer). Note that bits within the last block
+    /// that exceed the capacity are stored as provided.
     ///
     /// For example:
     /// ```
@@ -165,16 +166,6 @@ impl FixedBitSet {
                 simd_block_end.offset_from(subblock) as usize,
             );
 
-            // Mask off any bits in the last block that the iterator did write to, but
-            // that are beyond the length.  This is necessary so that PartialEq, Hash,
-            // etc. work correctly.
-            let rem = bits % BITS;
-            if rem != 0 {
-                let last_block_ptr = vec.as_mut_ptr().cast::<Block>().add(block_cnt - 1);
-                let mask = (1usize << rem) - 1;
-                last_block_ptr.write(last_block_ptr.read() & mask);
-            }
-
             let data = NonNull::new_unchecked(vec.as_mut_ptr()).cast();
             let capacity = vec.capacity();
             // FixedBitSet is taking over the ownership of vec's data
@@ -197,7 +188,19 @@ impl FixedBitSet {
     /// assert_eq!(bs.len(), 10);
     /// ```
     pub fn ones_with_capacity(bits: usize) -> Self {
-        Self::with_capacity_and_blocks(bits, core::iter::repeat(!0))
+        if bits == 0 {
+            return Self::new();
+        }
+        let (mut block_cnt, rem) = div_rem(bits, BITS);
+        block_cnt += (rem > 0) as usize;
+        let last_block = if rem == 0 { !0 } else { (1usize << rem) - 1 };
+
+        Self::with_capacity_and_blocks(
+            bits,
+            core::iter::repeat(!0)
+                .take(block_cnt - 1)
+                .chain(core::iter::once(last_block)),
+        )
     }
 
     /// Grow capacity to **bits**, all new bits initialized to zero
